@@ -265,25 +265,10 @@ struct Competition {
             return;
         }
         cout << "[Info]Scroll scoreboard.\n";
-        // Before scrolling, perform an implicit flush to set lastFlushed snapshot,
-        // then output the scoreboard (which reflects the flushed state)
-        recalcFromVisibleStatesAndFlush();
-        // But freezing hides some info; visible state is already represented in Team fields and FrozenInfo
-        // To follow sample: they first print scoreboard before scrolling (after flushing)
-        // We need to flush visible ranking snapshot, but it should not modify frozen internals
-        // We'll recalc rankings on visible state and print it
-        // Determine current visible ranking
+        // Before scrolling, output scoreboard before scrolling (after flush)
         printScoreboardCurrentView();
 
-        // Now perform scrolling: repeatedly select lowest-ranked team with any frozen problems
-        // At each step, unfreeze the smallest problem letter for that team, and if ranking changes, output change line.
-
-        // Build helper: get current order function for dynamic changes
-        auto getOrder = [&]() {
-            return getSortedIndicesByCurrentState();
-        };
-
-        // Function to find lowest-ranked team having frozen problems
+        auto getOrder = [&]() { return getSortedIndicesByCurrentState(); };
         auto hasFrozenAny = [&](const Team &t) {
             for (int i = 0; i < problemCount; ++i) if (t.frozen[i].hasFrozen) return true;
             return false;
@@ -295,23 +280,17 @@ struct Competition {
             for (int i = (int)order.size() - 1; i >= 0; --i) {
                 if (hasFrozenAny(teams[order[i]])) { candidate = order[i]; break; }
             }
-            if (candidate == -1) break; // no more frozen problems
+            if (candidate == -1) break;
 
-            // previous ranking position mapping
             unordered_map<string,int> prePos;
             for (size_t i = 0; i < order.size(); ++i) prePos[teams[order[i]].name] = (int)i + 1;
 
-            // pick smallest problem index with frozen
             int pi = -1;
             for (int i = 0; i < problemCount; ++i) if (teams[candidate].frozen[i].hasFrozen) { pi = i; break; }
             if (pi == -1) break;
 
-            // Unfreeze this problem for candidate: first, as per spec, scroll operation first flushes scoreboard before proceeding
-            // So rankings should be recalculated before applying change. Our order above is already the current view.
-            // Now apply the frozen submissions for that problem to team's true state
             applyFrozenForTeamProblem(teams[candidate], pi);
 
-            // After applying, compute new ranking and if candidate's ranking increases, output change line, and repeat process on newly updated ranking
             vector<int> newOrder = getOrder();
             unordered_map<string,int> postPos;
             for (size_t i = 0; i < newOrder.size(); ++i) postPos[teams[newOrder[i]].name] = (int)i + 1;
@@ -319,14 +298,8 @@ struct Competition {
             int pre = prePos[teams[candidate].name];
             int post = postPos[teams[candidate].name];
             if (post < pre) {
-                // ranking improved. team_name1 is the improving team, team_name2 is the team previously at the position just before team1 after improvement
-                // From spec: team_name2 represents the team that was at the position before team_name1's ranking increase (i.e., the team that was at the position before team_name1 moved up). Based on sample, they print the team displaced directly above.
-                // Identify the team that currently occupies the position post (after improvement) other than candidate; equivalently, the one that was at position post before
-                // We can find the team at position post in pre-order
                 string displaced;
-                for (auto &kv : prePos) {
-                    if (kv.second == post) { displaced = kv.first; break; }
-                }
+                for (auto &kv : prePos) if (kv.second == post) { displaced = kv.first; break; }
                 cout << teams[candidate].name << ' ' << displaced << ' ' << teams[candidate].solvedCount << ' ' << teams[candidate].penalty << "\n";
             }
         }
